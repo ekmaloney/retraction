@@ -1,0 +1,34 @@
+name|type|data|command|depend|seed|path|time|size|bytes|format|iteration|parent|children|seconds|warnings|error
+code_final_date|stem|bda4c638a3f2e4c4|3d7878760483ceed|7199b9143a2e7ccc|2116712816||t19079.6076089443s|01abbd749ee9f360|14197|rds|vector|||1.057||
+rw_data_raw_file|stem|63d37e42d26693b0|0836ea7695e0902d|c3b5fc02cdc369c1|-553908597||t19079.6079559639s|cd79df3467b07f58|4475624|rds|vector|||1.511|Expecting date in N28045  R28045C14 got 111753 120000 AM|
+doi_added|stem|91901f41b2c0d2f0|4e11edc2d4cd6023|7199b9143a2e7ccc|-1075009046||t19079.6079583832s|ed19b75f8e58c189|15054|rds|vector|||0.202||
+rw_data_cleaner|stem|1de9c92166ff7a39|026ef1cdb32b1bb5|9fcbfa9635235d4f|1016151467||t19079.6098629038s|4ad44a83622682f8|135444|rds|vector|||2.146|Expected 2 pieces. Missing pieces filled with NA in 65438 rows 1, 2, 7, 9, 10, 11, 13, 14, 15, 17, 18, 19, 21, 22, 23, 24, 25, 27, 28, 32, ....|
+rw_dois|stem|32491b32ebb82522|d2b1ec3cb53919c4|060db254743d2437|-530510832||t19079.6098631604s|efca82d0787609c7|58299|rds|vector|||0.01||
+bad_record_ids|stem|e4bb00ac3c5085e6|01c7872d2de03a85|42f61cc99598a3d6|-728333071||t19079.6108990074s|82e305458b2ddbd4|725|rds|vector|||89.493||
+write_out_record_ids|stem|b4b8d266a107f277|a0265eef13de1806|a34e8250ac835db2|1009685074||t19079.6109004994s|d9dbdc9a1bd5316d|14202|rds|vector|||0.121||
+final_dois|stem|dd5f5858882c5559|d6e7cb8b743a8cec|213ce762dd43928b|-1381805394||t19079.6109007256s|2e0fbb8a9c8e3512|57400|rds|vector|||0.008||
+paper_info|stem|01f0b3187fab6957|748d9fe183c7dafd|1ae946b61595fbda|59356330||t19079.6129715239s|c02ccfb47ae67499|404608|rds|vector|||178.747||
+no_pub_date|stem|0a50aa8cd147e30b|df429cd832b449d6|dc3b581f322b015a|-1947974441||t19079.6129718088s|3e453781ca554f9e|12031|rds|vector|||0.018||
+sampled_papers_df|stem|f3f3a3d074bcced2|dcbe1e6fb419d5b0|45dc084e90f18bb4|1477192107||t19079.9590213806s|2c9442fe28c5f819|515065|rds|vector|||0.9||
+all_authors|stem|bf563adca08612da|1cf491c40456d09f|be76409bf62dd48e|-366625779||t19079.959024264s|963b1e423dc14783|71356|rds|vector|||0.079||
+code_pub_date|stem|0a50aa8cd147e30b|d772466f5234c39e|ac70f67f33902347|-1008357372||t19079.959025461s|3e453781ca554f9e|12031|rds|vector|||0.098||
+select_doi_to_request|function|78b972f7c6f7b143||||||||||||||
+get_paper_results|function|a5b59eff351d3065||||||||||||||
+get_papers|function|5d1c3e7c1dfb201a||||||||||||||
+get_open_alex_info|function|90d5ef08af0eb3d7||||||||||||||
+identify_no_og_date|function|c2a87de21776c0f1||||||||||||||
+getting_papers_coauthors|function|18cdb3ba723a8065||||||||||||||
+poss_coauthors|function|95e159dc7f22e440||||||||||||||
+inner_coauth_function|function|f35b20eac809c45f||||||||||||||
+join_data|function|c751ab6e1a3135fa||||||||||||||
+combine_retracted_sampled|function|fabe40376fd02084||||||||||||||
+fix_subject_column|function|d077e518e9f4b286||||||||||||||
+coauthor_safely|function|4d51b66573bac8bd||||||||||||||
+join_all_data_together|function|863b4872dc04b6a0||||||||||||||
+get_paper_info|function|0c31baad9f3d3c3f||||||||||||||
+identify_issue_dois|function|6a2ec3fabe27e5d6||||||||||||||
+get_coauthors|function|5c0d4d08957aec63||||||||||||||
+get_all_retracted_papers|function|657dab1b1a6f619e||||||||||||||
+get_coauthors_network|function|b751a89fb49e6d2e||||||||||||||
+get_network_covariates|function|2c800a0d039d448c||||||||||||||
+network_info|stem||a8734d9a8c4afd43|e5ef797a7008cdd5|-1948745895||t19079.9924721019s||0|rds|vector|||574.631||1m22mProblem while computing ..1  alter_author incoauthorsalter_author.1mCaused by error in 1m1malter_author in coauthorsalter_author22m33m39m object alter_author not found
