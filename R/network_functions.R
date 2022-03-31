@@ -14,19 +14,16 @@ get_coauthors_network <- function(id){
   }else{
     coauthors_coauthors <- coauthors_coauthors %>% 
       filter(alter_author %in% coauthors$alter_author)
+  
     
     #get the ego network
     ego_net <- bind_rows(coauthors, coauthors_coauthors) %>% 
       filter(ego_author != str_remove(a_id, "https://openalex.org/") & 
                alter_author != str_remove(a_id, "https://openalex.org/")) %>% 
-      dplyr::mutate(ego_first = paste(ego_author_name, alter_author_name, sep = "_"),
-                    alter_first = paste(alter_author_name, alter_author_name, sep = "_")) %>% 
-      tidyr::pivot_longer(ego_first:alter_first, 
-                          names_to = "order", 
-                          values_to = "tie") %>% 
-      dplyr::select(paper_id, tie) %>% 
-      dplyr::distinct() %>% separate(tie, into = c("ego_author",
-                                                   "alter_author"), sep = "_") %>% 
+      dplyr::mutate(tie = if_else(ego_author_name < alter_author_name, paste(ego_author_name, alter_author_name, sep = "_"),
+                                  paste(alter_author_name, ego_author_name, sep = "_"))) %>% 
+      select(paper_id, tie) %>% distinct() %>% 
+      separate(tie, into = c("ego_author", "alter_author"), sep = "_") %>% 
       filter(ego_author != alter_author) %>% 
       group_by(ego_author, alter_author) %>% 
       summarise(weight = n())
@@ -119,7 +116,7 @@ get_network_covariates <- function(i){
 }
 
 network_info <- tibble()
-for(i in all_authors$authors_id[83:3283]){
+for(i in all_authors$authors_id[1:3283]){
   net_cov <- get_network_covariates(i = i)
   
   network_info <- bind_rows(network_info, net_cov)
