@@ -1,0 +1,258 @@
+---
+title: "Retraction Workflow"
+author: "Em Maloney"
+date: "5/4/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+
+### Section 1: Raw data from Retraction Watch Database
+```{r}
+library(tidyverse)
+
+#read in the data
+rw_db <- readxl::read_xlsx("data/retraction_db.xlsx")
+
+#filter to *only* the ones with psychology in them
+rw_db_long <- rw_db %>% 
+              janitor::clean_names() %>% 
+              separate(subject, into = c("sub_1", "sub_2", "sub_3", "sub_4",
+                                             "sub_5", "sub_6", "sub_7", "sub_8",
+                                             "sub_9", "sub_10", "sub_11"), 
+                           sep = ";") %>% 
+              pivot_longer(sub_1:sub_11, names_to = "subject_number", 
+                         values_to = "subject") %>% 
+              filter(!is.na(subject)) %>% 
+              separate(subject, into = c("subject_level_1", "subject_level_2"),
+                     sep = "-") %>% 
+              filter(subject_level_1 == "(SOC) Psychology") %>% 
+              mutate(doi_unavailable = case_when((retraction_doi == "Unavailable" |
+                                                 retraction_doi == "unavailable") &
+                                                 (original_paper_doi == "Unavailable" |
+                                                    original_paper_doi == "unavailable") ~ "no_doi",
+                                               TRUE ~ "doi"))
+
+#read in the file with the matches for dois I was eventually able to find
+rw_db_complete <- read_csv("data/missing_matches.csv")
+
+#remove the ones with no openalexid
+rw_db_nomissing <- rw_db_complete %>% 
+                   filter(openalexid != "NA")
+
+#save initial file
+rw_db_nomissing_out <- rw_db_nomissing %>% select(openalexid, 
+                                                  title, 
+                                                  original_paper_date,
+                                                  original_paper_doi,
+                                                  retraction_date,
+                                                  retraction_doi,
+                                                  reason)
+write_csv(rw_db_nomissing_out, file = "data/rw_db_oa_link.csv")
+```
+
+#next, get the information on papers from openalex
+```{r}
+library(openalexR)
+#function to get the paper info
+#takes one variable d, the dataframe of papers to look up
+get_paper_info <- function(d){
+  paper_info <- tibble()
+  issue_ids <- tibble()
+  
+  for (i in 1:nrow(d)) {
+    
+    possibleError <- tryCatch(
+      get_open_alex_info(d$doi_for_requesting[i]),
+      error = function(e) e
+    )
+    
+    if(!inherits(possibleError, "error")){
+      #REAL WORK
+      interim_paper_info <- get_open_alex_info(d$doi_for_requesting[i])
+      paper_info <- bind_rows(paper_info, interim_paper_info)
+    }
+    
+    if(inherits(possibleError, "error")){
+      issue_recordid <- d$record_id[i]
+      issue_ids <- c(issue_ids, issue_recordid)
+    }
+    
+  }  #end for
+  
+  return(paper_info)
+}
+
+rw_db_nomissing_out <- rw_db_nomissing_out %>% 
+                       mutate(openalexid = if_else(openalexid == "openalex.org/W2112961338",
+                                                   "https://openalex.org/W2112961338",
+                                                   openalexid))
+
+#not sure if the safely is doing all that much
+safely_find_work <- purrr::safely(openalexR::find_work)
+
+#get the paper info
+all_paper_info <- tibble()
+for(i in 1:nrow(rw_db_nomissing_out)){
+  a <- safely_find_work(id_type = "openalex", 
+                        id = rw_db_nomissing_out$openalexid[i])
+  
+  all_paper_info <- bind_rows(all_paper_info, a)
+}
+  
+  
+saveRDS(all_paper_info, file = "data/new_all_paper_info.RDS")
+```
+
+```{r}
+all_paper_info <- readRDS("data/new_all_paper_info.RDS")
+all_paper_info <- all_paper_info$result
+retracted_authors <- all_paper_info %>% unnest_longer(authors)
+
+```
+
+#3 get new sampled papers
+```{r}
+
+source("R/sampling_function.R")
+
+#first get the paper host info
+paper_host_info <- all_paper_info %>% unnest(host_venue_info, names_sep = "_")
+rw_db_nomissing_out <- read_csv("data/rw_db_oa_link.csv")
+rw_db_nomissing_out <- rw_db_nomissing_out %>% select(-title)
+
+#join with the original rw db so you have the original publication date
+new_sampled <- paper_host_info %>% 
+  left_join(rw_db_nomissing_out)
+
+#construct urls for the API calls
+df_use_sampling <- new_sampled %>% 
+                     select(id, original_paper_date, title, 
+                            host_venue_info_id, host_venue_info_publisher,
+                            host_venue_info_name) %>% 
+                     distinct() %>% 
+                     filter((!is.na(host_venue_info_id) | !is.na(host_venue_info_publisher)) &
+                              !is.na(original_paper_date)) %>% 
+                     mutate(ieee = if_else(str_detect(host_venue_info_publisher, "IEEE"),
+                                           "yes", "no"),
+                            paper_id = id,
+                            new_date = lubridate::ymd(original_paper_date),
+                            publication_year = lubridate::floor_date(new_date, unit = "year"),
+                            new_pub_year = format(as.Date(publication_year,
+                                                          format="%Y/%m/%d"),"%Y"),
+                            only_id = str_remove(host_venue_info_id, "https://openalex.org/"),
+                            url = case_when(ieee == "yes" ~
+paste0("https://api.openalex.org/works?filter=host_venue.publisher:ieee,publication_date:",
+                                                            new_date),
+                                                   TRUE ~ paste0("http://api.openalex.org/works?filter=host_venue.id:",
+                            only_id, ",publication_date:", new_date))) %>% 
+                            rowwise() %>% 
+                            mutate(num_pages = ceiling(openalexR::openalex_api(url)$meta$count/25),
+                                   ieee_name = if_else(ieee == "yes", 
+                                                       host_venue_info_name, 
+                                                       NA_character_)) %>% 
+                            distinct()
+
+#set a seed for reproducibility
+set.seed(123)
+sampled_papers <- tibble()
+for(i in 1:nrow(df_use_sampling)){
+  if(is.na(df_use_sampling$host_venue_info_id[i]) &
+       is.na(df_use_sampling$ieee_name[i])){
+      next()
+       }
+    
+    s <- get_paper_results(paper_id = df_use_sampling$paper_id[i],
+                        pub_date = df_use_sampling$new_date[i],
+                        url = df_use_sampling$url[i],
+                        ieee_name = df_use_sampling$ieee_name[i],
+                        num_pages = df_use_sampling$num_pages[i])
+    if(nrow(s) == 0){
+      next()
+    }
+    s <- s %>% mutate(original_paper_id = df_use_sampling$paper_id[i])
+    sampled_papers <- bind_rows(sampled_papers, s)
+    saveRDS(sampled_papers, file = "data/final_sampled_papers_510.RDS")
+  }
+
+#get rid of the inverted abstract bc takes up so much data
+sampled_papers <- sampled_papers %>% select(-abstract_inverted_index)
+
+#group together
+new_all_paper_info <- df_use_sampling %>% mutate(isRetracted = 1)
+final_sampled_papers <- sampled_papers %>% mutate(isRetracted = 0)
+
+#missing retract 
+paper_info_no_samples <- new_all_paper_info %>% filter(!(id %in% final_sampled_papers$original_paper_id))
+
+#try again for those not found in case of random API errors
+sampled_papers_2 <- tibble()
+for(i in 1:nrow(paper_info_no_samples)){
+  if(is.na(paper_info_no_samples$host_venue_info_id[i]) &
+       is.na(paper_info_no_samples$ieee_name[i])){
+      next()
+       }
+    
+    s <- get_paper_results(paper_id = paper_info_no_samples$paper_id[i],
+                        pub_date = paper_info_no_samples$new_date[i],
+                        url = paper_info_no_samples$url[i],
+                        ieee_name = paper_info_no_samples$ieee_name[i],
+                        num_pages = paper_info_no_samples$num_pages[i])
+    if(nrow(s) == 0){
+      next()
+    }
+    s <- s %>% mutate(original_paper_id = paper_info_no_samples$paper_id[i])
+    sampled_papers_2 <- bind_rows(sampled_papers_2, s)
+    saveRDS(sampled_papers_2, file = "data/second_sampled_papers.RDS")
+  }
+
+#again nix the inverted index
+sampled_papers_2 <- sampled_papers_2 %>% select(-abstract_inverted_index)
+
+#df for joining
+df_use_sampling_join <- df_use_sampling %>% 
+                        select(id, original_paper_date, title) %>% 
+                        mutate(original_retracted = 1,
+                               sampled = 0)
+
+#final to join together
+final_sampled_papers_join <- bind_rows(final_sampled_papers, sampled_papers_2) %>% 
+                             mutate(original_paper_date = lubridate::ymd(publication_date)) %>%
+                             select(id, title, original_paper_date,
+                                    original_paper_id) %>% 
+                             mutate(original_retracted = 0, sampled = 1)
+
+#only keep those that have matched samples
+df_use_sampling_join <- df_use_sampling_join %>% 
+                        filter(id %in% final_sampled_papers_join$original_paper_id)            
+
+#join all together here
+all_papers <- bind_rows(df_use_sampling_join, final_sampled_papers_join)
+
+#save :) 
+saveRDS(all_papers, file = "new_retract_sample.RDS")
+```
+
+```{r}
+#identify all original papers that are not in the final sample 
+rw_db_nomissing_out <- read_csv("data/rw_db_oa_link.csv")
+
+non_matched_og_papers <- rw_db_nomissing_out %>% filter(!(openalexid %in% all_papers$original_paper_id))
+
+#write out for coding of why
+write_csv(non_matched_og_papers, file = "data/non_matched_og_papers.csv")
+```
+
+```{r}
+#investigating 
+paper_id = "https://openalex.org/W1522154289"
+                        pub_date = paper_info_no_samples$new_date[paper_info_no_samples$paper_id == paper_id]
+                        url = paper_info_no_samples$url[paper_info_no_samples$paper_id == paper_id]
+                        ieee_name = paper_info_no_samples$ieee_name[paper_info_no_samples$paper_id == paper_id]
+                        num_pages = paper_info_no_samples$num_pages[paper_info_no_samples$paper_id == paper_id]
+
+```
+

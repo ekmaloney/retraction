@@ -18,6 +18,9 @@ identify_no_og_date <- function(retracted_paper_info,
 }
 
 
+a_d <- join_all_data_together(paper_info_df = paper_info,
+                              no_date_info_df = code_final_date)
+
 join_all_data_together <- function(paper_info_df, no_date_info_df){
   
   paper_info_df_selection <- paper_info_df %>% 

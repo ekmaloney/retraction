@@ -6,8 +6,17 @@ get_coauthors_network <- function(id){
   coauthors <- openalexR::get_coauthors(id_type = "openalex",
                                         id = a_id)
   #get coauthors coauthors
-  coauthors_coauthors <- unique(coauthors$alter_author) %>% 
-                         map2_df("openalex", ., get_coauthors)
+  coauthors_coauthors <- tibble::tibble()
+  unique_coauth <- unique(coauthors$alter_author)
+  for(i in unique_coauth){
+    c <- get_coauthors(id = i, id_type = "openalex")
+    coauthors_coauthors <- bind_rows(coauthors_coauthors, c)
+    Sys.sleep(10)
+  }
+  
+  # coauthors_coauthors <- unique(coauthors$alter_author) %>% 
+  #                        map2_df("openalex", ., get_coauthors)
+
     
   if(nrow(coauthors) == 0){
     network <- NULL
@@ -68,6 +77,7 @@ get_coauthors <- function(id_type = c("orcid", "openalex",
 
 inner_coauth_function <- function(id_type, id){
   #get all papers and unnest authorships
+  
   papers <- get_authors_papers(id_type, id) %>%
             tidyr::unnest(authorships, names_sep = "_")
   
@@ -116,7 +126,10 @@ get_network_covariates <- function(i){
 }
 
 network_info <- tibble()
-for(i in all_authors$authors_id[1:3283]){
+
+#issues 3, 4, 5
+
+for(i in all_authors$authors_id[18:3283]){
   net_cov <- get_network_covariates(i = i)
   
   network_info <- bind_rows(network_info, net_cov)

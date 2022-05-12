@@ -1,0 +1,277 @@
+---
+title: "Retraction covariates"
+author: "Em Maloney"
+date: "4/20/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(tidyverse)
+library(igraph)
+library(openalexR)
+library(targets)
+
+tar_load(all_authors)
+
+#all_author_summary <- readRDS("data/author_covariates.RDS")
+all_author_summary2 <- readRDS("data/author_covariates2.RDS")
+#issue ids 16, 64, 67, 83, 143, 159, 183, 184, 188, 192, 206, 334, 342,
+#352, 379, 385, 386-499, 526, 655
+for(i in 1032:nrow(all_authors)){
+  
+  #safe_get_info <- safely(get_info_on_person)
+  
+  a_summary <- safe_get_info(author_type = "test",
+                           author_id = all_authors$authors_id[i],
+                           main_author_id = all_authors$authors_id[i])
+  
+  if(is.null(a_summary$result)){
+    next()
+  }else{
+    all_author_summary2 <- bind_rows(all_author_summary2, a_summary)
+    saveRDS(all_author_summary2, file = "data/author_covariates2.RDS")
+  }
+   
+}
+
+#stopped at 1032
+
+ego_info <- all_author_summary %>% filter(position == "ego")
+
+year <- ego_info %>% select(main_author_id, ego_first_pub = earliest_pub) %>% distinct()
+
+alter_info <- all_author_summary %>% 
+              filter(position != "ego") %>% 
+              left_join(year) %>% 
+              mutate(yr_diff = as.Date(ego_first_pub) - as.Date(earliest_pub),
+                     yr_diff = as.double(yr_diff)) %>% 
+              group_by(main_author_id) %>% 
+              summarise(median_n_papers = median(num_papers, na.rm = TRUE),
+                        sd_n_papers = sd(num_papers, na.rm = TRUE),
+                        median_citation = median(total_citation_count, na.rm = TRUE),
+                        sd_citation = sd(total_citation_count, na.rm = TRUE),
+                        median_max_cited = median(max_cited, na.rm = TRUE),
+                        sd_max_cited = sd(max_cited, na.rm = TRUE),
+                        median_avg_num_authors= median(avg_num_authors, na.rm = TRUE),
+                        sd_avg_num_authors = sd(avg_num_authors, na.rm = TRUE),
+                        median_total_collaborations = median(total_collaborations, na.rm = TRUE),
+                        sd_total_collaborations = sd(total_collaborations, na.rm = TRUE),
+                        median_max_repeat_collab = median(max_repeat_collab, na.rm = TRUE),
+                        sd_max_repeat_collab = sd(max_repeat_collab, na.rm = TRUE),
+                        median_number_one_off = median(number_one_off, na.rm = TRUE),
+                        sd_number_one_off = sd(number_one_off, na.rm = TRUE),
+                        median_mean_repeat_collab = median(mean_repeat_collab, na.rm = TRUE),
+                        sd_mean_repeat_collab = sd(mean_repeat_collab, na.rm = TRUE))
+
+all_ego_info <- left_join(ego_info, alter_info)
+
+only_num <- all_ego_info %>% 
+            select(median_n_papers, median_citation,
+                   median_max_cited, median_total_collaborations,
+                   median_max_repeat_collab, median_number_one_off,
+                   median_mean_repeat_collab, clust_coeff)
+pairs(only_num)
+
+ggplot(alter_info, mapping = aes(x = yr_diff)) + 
+      geom_histogram() + labs(x = "Ego First Pub - Coauth First Pub")
+
+```
+
+
+```{r}
+get_info_on_person <- function(author_type,
+                               author_id,
+                               main_author_id){
+  
+  #first get their papers
+  paper_info <- wrapper_function_get_papers(author_id = author_id,
+                                            main_author_id = main_author_id)
+  
+  #make paper info into edgelist
+  ego_edgelist <- format_as_edgelist(paper_info = paper_info,
+                                     author_id = author_id)
+  
+  #summarise info
+  main_author_summarised <- wrapper_function_summarise_info(paper_info = paper_info,
+                                                            author_id = author_id,
+                                                            position = "ego")
+  
+  #get coauthors 
+  unique_coauthors <- paper_info %>% 
+                      filter(authorships$author$id != author_id) %>% 
+                      mutate(author_ids = authorships$author$id) %>% 
+                      select(author_ids) %>% distinct() %>% pull(author_ids)
+  
+  all_coauth_paper_info <- tibble()
+  coauth_summary <- tibble()
+  all_coauth_edgelist <- tibble()
+  
+  if(length(unique_coauthors > 0)){
+    for(i in 1:length(unique_coauthors)){
+    coauth_paper_info <- wrapper_function_get_papers(author_id = unique_coauthors[i],
+                                            main_author_id = main_author_id)
+    
+    all_coauth_paper_info <- bind_rows(all_coauth_paper_info, coauth_paper_info)
+    
+    coauth_summarised <- wrapper_function_summarise_info(paper_info = coauth_paper_info,
+                                                         author_id = unique_coauthors[i],
+                                                         position = "coauthor")
+    coauth_summary <- bind_rows(coauth_summary, coauth_summarised)
+    
+    coauth_edgelist <- format_as_edgelist(paper_info = coauth_paper_info,
+                                          author_id = unique_coauthors[i])
+    
+    all_coauth_edgelist <- bind_rows(all_coauth_edgelist, coauth_edgelist)
+    }
+    
+  all_coauth_edgelist_net <- all_coauth_edgelist %>% 
+                             filter(alter_author %in% ego_edgelist$alter_author)
+  
+  all_author_info <- bind_rows(main_author_summarised, coauth_summary)
+  
+  ego_net <- get_full_ego_net(author_id = author_id,
+                              ego_edgelist = ego_edgelist,
+                              all_coauth_edgelist_net = all_coauth_edgelist_net)
+  
+  net_measures <- get_network_measures(ego_net = ego_net)
+  
+  all_author_info_final <- bind_cols(all_author_info, net_measures)
+  }else{
+    all_author_info_final <- main_author_summarised
+  }
+  
+  return(all_author_info_final)
+  
+}
+
+
+
+
+wrapper_function_get_papers <- function(author_id, main_author_id){
+  a_id <- str_remove_all(author_id, "https://openalex.org/")
+  author_papers <- openalexR::get_authors_papers(id_type = "openalex", id = a_id)
+  author_papers <- author_papers %>% unnest_longer(authorships) %>% 
+                 mutate(main_author_id = main_author_id,
+                        author_id = author_id)
+  
+  return(author_papers)
+}
+
+
+wrapper_function_summarise_info <- function(paper_info,
+                                            author_id,
+                                            position){
+  
+  author_papers_summarised <- paper_info %>% 
+                            mutate(total_collaborations = length(unique(authorships$author$id)) -1) %>% 
+                            group_by(id) %>% 
+                            mutate(num_authors = length(unique(authorships$author$id))) %>% 
+                            slice(1) %>% ungroup() %>% 
+                            group_by(main_author_id) %>% 
+                            summarise(num_papers = length(unique(id)),
+                                     earliest_pub = min(publication_date),
+                                     latest_pub = max(publication_date),
+                                     total_citation_count = sum(cited_by_count, na.rm = TRUE),
+                                     min_cited = min(cited_by_count, na.rm = TRUE),
+                                     max_cited = max(cited_by_count, na.rm = TRUE),
+                                     avg_num_authors = mean(num_authors),
+                                     total_collaborations = total_collaborations) %>% distinct()
+
+author_collaboration_summarised <- paper_info %>% 
+                                   filter(authorships$author$id != main_author_id) %>% 
+                                   group_by(authorships$author$id) %>% 
+                                   summarise(num_papers_with_collaborator = n()) %>% 
+                                   ungroup() %>% 
+                                   summarise(max_repeat_collab = max(num_papers_with_collaborator),
+                                             number_one_off = sum(num_papers_with_collaborator == 1),
+                                             mean_repeat_collab = mean(num_papers_with_collaborator))
+
+        author_info <- bind_cols(author_papers_summarised,
+                              author_collaboration_summarised) %>% 
+                              mutate(author_id = author_id,
+                                   position = position)
+        
+      return(author_info)
+                                            }
+```
+
+```{r}
+
+format_as_edgelist <- function(paper_info,
+                               author_id){
+  
+  ego_name <- paper_info %>% 
+              filter(authorships$author$id == author_id) %>% 
+              mutate(ego_name = authorships$author$display_name) %>% select(ego_name) %>% distinct()
+  
+  edgelist <- tibble::tibble(paper_id = paper_info$id,
+              ego_author = stringr::str_remove(author_id, "https://openalex.org/"),
+                                   alter_author = stringr::str_remove(paper_info$authorships$author$id,
+                                                                      "https://openalex.org/"),
+                                   alter_author_name = paper_info$authorships$author$display_name) %>%
+    dplyr::filter(ego_author != alter_author) %>% 
+    mutate(ego_author_name = ego_name$ego_name)
+              
+  
+}
+
+
+```
+
+```{r}
+
+get_full_ego_net <- function(author_id,
+                             ego_edgelist,
+                             all_coauth_edgelist_net){
+
+  
+      ego_net <- bind_rows(ego_edgelist, all_coauth_edgelist_net) %>% 
+      filter(ego_author != str_remove(author_id, "https://openalex.org/") & 
+               alter_author != str_remove(author_id, "https://openalex.org/")) %>% 
+      dplyr::mutate(tie = if_else(ego_author_name < alter_author_name, 
+                                  paste(ego_author_name, alter_author_name, sep = "_"),
+                                  paste(alter_author_name, ego_author_name, sep = "_"))) %>% 
+      select(paper_id, tie) %>% distinct() %>% 
+      separate(tie, into = c("ego_author", "alter_author"), sep = "_") %>% 
+      filter(ego_author != alter_author) %>% 
+      group_by(ego_author, alter_author) %>% 
+      summarise(weight = n())
+      
+      
+      network <- graph_from_data_frame(ego_net, directed = FALSE)
+      
+      return(network)
+}
+
+
+
+get_network_measures <- function(ego_net){
+  
+  if(is.null(ego_net)){
+    density <- NULL
+    clust_coeff <- NULL
+    number_components <- NULL
+    size_components <- NULL
+  }else {
+    clust_coeff <- igraph::transitivity(ego_net, type = "globalundirected",
+                                        weights = E(ego_net)$weight)
+    number_components <- igraph::components(ego_net)$no
+    size_components <- igraph::components(ego_net)$csize 
+  }
+  
+  net_info <- tibble::tibble(id = i,
+                             clust_coeff = clust_coeff,
+                             number_components = number_components,
+                             size_components = list(size_components))
+  
+  
+  return(net_info)
+  
+}
+```
+

@@ -64,7 +64,7 @@ list(
   tar_target(all_authors, combine_retracted_sampled(paper_info, sampled_papers_df)),
   
   #fourteen: get network info
-  tar_target(network_info, map_df(all_authors$authors_id, get_network_covariates))
+  #tar_target(network_info, map_df(all_authors$authors_id, get_network_covariates))
   
   #tar_target(network_info, map_df(sampled_papers_df$, get_network_covariates))
   
